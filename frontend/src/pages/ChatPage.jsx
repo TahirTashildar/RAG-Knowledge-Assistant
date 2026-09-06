@@ -126,18 +126,42 @@ export default function ChatPage() {
   const hasDocuments = documents.length > 0;
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="flex-1 overflow-y-auto px-6 py-6 max-w-3xl mx-auto w-full space-y-4">
+    <div className="h-screen flex flex-col bg-[radial-gradient(circle_at_top_right,_rgba(47,111,98,0.08),_transparent_32rem)]">
+      <header className="shrink-0 border-b border-slateink/10 bg-paper/85 px-4 py-4 backdrop-blur sm:px-8">
+        <div className="mx-auto flex max-w-4xl items-center justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-teal-dark">Research workspace</p>
+            <h1 className="mt-1 text-xl font-semibold text-ink sm:text-2xl">
+              {conversation?.title || 'New conversation'}
+            </h1>
+          </div>
+          <div className="hidden items-center gap-2 rounded-full border border-teal/15 bg-teal-light px-3 py-1.5 text-xs font-medium text-teal-dark sm:flex">
+            <span className="h-2 w-2 rounded-full bg-teal shadow-[0_0_0_3px_rgba(47,111,98,0.12)]" />
+            {documents.length} {documents.length === 1 ? 'document' : 'documents'} indexed
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+        <div className="mx-auto max-w-4xl space-y-5">
         {messages.length === 0 && (
-          <div className="text-center py-20">
-            <h2 className="font-serif text-xl text-ink mb-2">
+          <div className="mx-auto max-w-2xl py-12 text-center sm:py-20">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-teal text-2xl text-white shadow-lg shadow-teal/20">
+              ✦
+            </div>
+            <h2 className="font-serif text-2xl text-ink sm:text-3xl">
               {hasDocuments ? 'Ask something about your documents' : 'Upload a document to get started'}
             </h2>
-            <p className="text-slateink text-sm">
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slateink">
               {hasDocuments
                 ? 'Every answer will point back to the page it came from.'
                 : 'Head to Documents in the sidebar to upload a PDF, TXT, or DOCX file.'}
             </p>
+            {hasDocuments && (
+              <div className="mx-auto mt-7 max-w-md rounded-2xl border border-amber/20 bg-amber-light/60 px-4 py-3 text-left text-xs leading-5 text-body/75">
+                <span className="font-semibold text-amber">Tip</span> Ask for a summary, a specific fact, or a comparison across your uploaded files.
+              </div>
+            )}
           </div>
         )}
 
@@ -146,28 +170,39 @@ export default function ChatPage() {
         ))}
 
         {status && (
-          <p className="text-sm text-slateink italic">
+          <div className="flex items-center gap-3 text-sm text-slateink">
+            <span className="flex gap-1">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal [animation-delay:-0.2s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal [animation-delay:-0.1s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal" />
+            </span>
             {status === 'searching' ? 'Searching your documents…' : 'Generating answer…'}
-          </p>
+          </div>
         )}
 
-        {error && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
+        {error && (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">
+            {error}
+          </p>
+          )}
 
         <div ref={bottomRef} />
+        </div>
       </div>
 
-      <form onSubmit={handleSend} className="border-t border-slateink/15 px-6 py-4">
-        <div className="max-w-3xl mx-auto flex gap-3">
+      <form onSubmit={handleSend} className="shrink-0 border-t border-slateink/10 bg-paper/90 px-4 py-4 backdrop-blur sm:px-8 sm:py-5">
+        <div className="mx-auto flex max-w-4xl items-end gap-3">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask a question about your documents…"
-            className="flex-1 border border-slateink/30 rounded px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal"
+            aria-label="Question"
+            className="min-w-0 flex-1 rounded-xl border border-slateink/20 bg-white px-4 py-3 text-sm text-ink shadow-sm outline-none transition placeholder:text-slateink/60 focus:border-teal focus:ring-4 focus:ring-teal/10"
           />
           <button
             type="submit"
             disabled={!input.trim() || status !== null}
-            className="bg-teal text-white px-5 py-2.5 rounded font-medium hover:bg-teal-dark transition-colors disabled:opacity-50"
+            className="rounded-xl bg-teal px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-teal/20 transition hover:-translate-y-0.5 hover:bg-teal-dark hover:shadow-md disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-40"
           >
             Send
           </button>
