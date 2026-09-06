@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-paper text-body font-sans antialiased;
+}
+
+h1, h2, h3 {
+  @apply font-serif;
+}
+
+::selection {
+  background-color: theme('colors.amber.light');
+}

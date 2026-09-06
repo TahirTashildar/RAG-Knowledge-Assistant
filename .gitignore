@@ -1,0 +1,35 @@
+# Environment variables
+.env
+*.env
+
+# Node modules
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Python virtual environment
+.venv/
+venv/
+rag-service/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# ChromaDB data
+chroma_data/
+rag-service/chroma_data/
+
+# Uploaded files
+uploads/*
+!uploads/.gitkeep
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
