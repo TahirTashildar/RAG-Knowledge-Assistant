@@ -24,8 +24,12 @@ from qdrant_client.models import (
     MatchValue,
     PayloadSchemaType,
 )
+
 from app.config import settings
-from app.embeddings.huggingface_embeddings import embed_documents, embed_query
+from app.embeddings.huggingface_embeddings import (
+    embed_documents,
+    embed_query,
+)
 
 
 _client: QdrantClient | None = None
@@ -38,6 +42,10 @@ class VectorStoreError(Exception):
 
 
 def get_client() -> QdrantClient:
+    """
+    Return a shared Qdrant client instance.
+    """
+
     global _client
 
     if _client is None:
@@ -50,32 +58,65 @@ def get_client() -> QdrantClient:
 
 
 def get_collection_name() -> str:
+    """
+    Return the configured Qdrant collection name.
+    """
+
     return settings.qdrant_collection_name
+
 
 def ensure_collection(vector_size: int) -> None:
     """
-    Create the collection if it does not already exist and ensure
-    payload indexes required for filtering are present.
+    Ensure the Qdrant collection exists.
+
+    Also create the payload indexes required for:
+    - filtering searches by userId
+    - deleting vectors by documentId
+
+    This function is safe to call before both ingestion and search.
     """
 
     client = get_client()
     collection_name = get_collection_name()
 
-    try:
-        client.get_collection(collection_name)
+    # ---------------------------------------------------------
+    # Create collection if it does not exist
+    # ---------------------------------------------------------
 
-    except Exception:
-        client.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(
-                size=vector_size,
-                distance=Distance.COSINE,
-            ),
+    try:
+        collection_exists = client.collection_exists(
+            collection_name=collection_name
         )
 
-    # Create payload indexes used for filtering.
-    # userId is required for strict per-user data isolation.
-    # documentId is required when deleting a document's vectors.
+    except Exception as exc:
+        raise VectorStoreError(
+            "QDRANT CONNECTION",
+            f"Could not check collection: {exc}",
+        ) from exc
+
+    if not collection_exists:
+        try:
+            client.create_collection(
+                collection_name=collection_name,
+                vectors_config=VectorParams(
+                    size=vector_size,
+                    distance=Distance.COSINE,
+                ),
+            )
+
+        except Exception as exc:
+            raise VectorStoreError(
+                "QDRANT COLLECTION",
+                f"Could not create collection: {exc}",
+            ) from exc
+
+    # ---------------------------------------------------------
+    # Create index for user isolation
+    #
+    # Every similarity search filters by userId.
+    # Qdrant Cloud requires a KEYWORD payload index.
+    # ---------------------------------------------------------
+
     try:
         client.create_payload_index(
             collection_name=collection_name,
@@ -84,6 +125,17 @@ def ensure_collection(vector_size: int) -> None:
             wait=True,
         )
 
+    except Exception as exc:
+        raise VectorStoreError(
+            "QDRANT INDEX",
+            f"Could not create userId index: {exc}",
+        ) from exc
+
+    # ---------------------------------------------------------
+    # Create index for document deletion
+    # ---------------------------------------------------------
+
+    try:
         client.create_payload_index(
             collection_name=collection_name,
             field_name="documentId",
@@ -94,10 +146,10 @@ def ensure_collection(vector_size: int) -> None:
     except Exception as exc:
         raise VectorStoreError(
             "QDRANT INDEX",
-            str(exc),
+            f"Could not create documentId index: {exc}",
         ) from exc
 
-    
+
 def add_chunks(
     *,
     user_id: str,
@@ -105,29 +157,58 @@ def add_chunks(
     filename: str,
     chunks: list[dict],
 ) -> int:
+    """
+    Generate embeddings and store document chunks in Qdrant.
+    """
 
     if not chunks:
         return 0
 
-    texts = [c["chunkText"] for c in chunks]
+    texts = [
+        chunk["chunkText"]
+        for chunk in chunks
+    ]
+
+    # ---------------------------------------------------------
+    # Generate embeddings
+    # ---------------------------------------------------------
 
     try:
         embeddings = embed_documents(texts)
+
     except Exception as exc:
         raise VectorStoreError(
             "EMBEDDING GENERATION",
             str(exc),
         ) from exc
 
+    if not embeddings:
+        raise VectorStoreError(
+            "EMBEDDING GENERATION",
+            "No embeddings were generated",
+        )
+
     if len(embeddings) != len(texts):
         raise VectorStoreError(
             "EMBEDDING GENERATION",
-            f"Embedding count mismatch: received "
-            f"{len(embeddings)} embeddings for {len(texts)} chunks",
+            (
+                f"Embedding count mismatch: received "
+                f"{len(embeddings)} embeddings for "
+                f"{len(texts)} chunks"
+            ),
         )
 
-    # Create collection using the actual embedding dimension.
-    ensure_collection(len(embeddings[0]))
+    # ---------------------------------------------------------
+    # Ensure collection and indexes exist
+    # ---------------------------------------------------------
+
+    ensure_collection(
+        vector_size=len(embeddings[0])
+    )
+
+    # ---------------------------------------------------------
+    # Create Qdrant points
+    # ---------------------------------------------------------
 
     points = []
 
@@ -152,6 +233,10 @@ def add_chunks(
             )
         )
 
+    # ---------------------------------------------------------
+    # Store vectors
+    # ---------------------------------------------------------
+
     try:
         get_client().upsert(
             collection_name=get_collection_name(),
@@ -166,12 +251,23 @@ def add_chunks(
 
     return len(points)
 
+
 def similarity_search(
     *,
     user_id: str,
     query: str,
     top_k: int,
 ) -> list[dict]:
+    """
+    Search Qdrant for the most relevant document chunks.
+
+    Results are always filtered by userId to enforce strict
+    user data isolation.
+    """
+
+    # ---------------------------------------------------------
+    # Generate query embedding
+    # ---------------------------------------------------------
 
     try:
         query_embedding = embed_query(query)
@@ -182,14 +278,41 @@ def similarity_search(
             str(exc),
         ) from exc
 
+    if not query_embedding:
+        raise VectorStoreError(
+            "EMBEDDING GENERATION",
+            "Query embedding was empty",
+        )
+
+    # ---------------------------------------------------------
+    # Ensure collection and indexes exist BEFORE searching.
+    #
+    # This fixes existing collections where userId/documentId
+    # indexes were not created previously.
+    # ---------------------------------------------------------
+
+    ensure_collection(
+        vector_size=len(query_embedding)
+    )
+
+    # ---------------------------------------------------------
+    # Strict user isolation filter
+    # ---------------------------------------------------------
+
     search_filter = Filter(
         must=[
             FieldCondition(
                 key="userId",
-                match=MatchValue(value=user_id),
+                match=MatchValue(
+                    value=user_id,
+                ),
             )
         ]
     )
+
+    # ---------------------------------------------------------
+    # Query Qdrant
+    # ---------------------------------------------------------
 
     try:
         response = get_client().query_points(
@@ -207,57 +330,85 @@ def similarity_search(
             str(exc),
         ) from exc
 
+    # ---------------------------------------------------------
+    # Format results
+    # ---------------------------------------------------------
+
     out = []
 
     for result in results:
 
-        payload = result.payload
+        payload = result.payload or {}
+
+        page_number = payload.get(
+            "pageNumber",
+            -1,
+        )
 
         out.append(
             {
-                "chunkId": payload["chunkId"],
-                "chunkText": payload["chunkText"],
-                "documentId": payload["documentId"],
-                "filename": payload["filename"],
+                "chunkId": payload.get("chunkId"),
+                "chunkText": payload.get(
+                    "chunkText",
+                    "",
+                ),
+                "documentId": payload.get(
+                    "documentId",
+                ),
+                "filename": payload.get(
+                    "filename",
+                ),
                 "pageNumber": (
-                    payload["pageNumber"]
-                    if payload["pageNumber"] != -1
+                    page_number
+                    if page_number != -1
                     else None
                 ),
+                # With cosine distance, Qdrant returns a higher
+                # score for more similar results.
                 "relevanceScore": result.score,
             }
         )
 
     return out
 
+
 def delete_document(
     *,
     user_id: str,
     document_id: str,
 ) -> None:
+    """
+    Delete all vectors belonging to a specific document
+    for the authenticated user.
+
+    Both userId and documentId are used so one user cannot
+    delete another user's vectors.
+    """
 
     delete_filter = Filter(
         must=[
             FieldCondition(
                 key="userId",
-                match=MatchValue(value=user_id),
+                match=MatchValue(
+                    value=user_id,
+                ),
             ),
             FieldCondition(
                 key="documentId",
-                match=MatchValue(value=document_id),
+                match=MatchValue(
+                    value=document_id,
+                ),
             ),
         ]
     )
 
     try:
-
         get_client().delete(
             collection_name=get_collection_name(),
             points_selector=delete_filter,
         )
 
     except Exception as exc:
-
         raise VectorStoreError(
             "QDRANT DELETE",
             str(exc),
