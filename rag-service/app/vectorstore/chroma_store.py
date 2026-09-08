@@ -144,7 +144,6 @@ def add_chunks(
 
     return len(points)
 
-
 def similarity_search(
     *,
     user_id: str,
@@ -171,16 +170,16 @@ def similarity_search(
     )
 
     try:
-
-        results = get_client().search(
+        response = get_client().query_points(
             collection_name=get_collection_name(),
-            query_vector=query_embedding,
+            query=query_embedding,
             query_filter=search_filter,
             limit=top_k,
         )
 
-    except Exception as exc:
+        results = response.points
 
+    except Exception as exc:
         raise VectorStoreError(
             "QDRANT SEARCH",
             str(exc),
@@ -203,15 +202,11 @@ def similarity_search(
                     if payload["pageNumber"] != -1
                     else None
                 ),
-
-                # Qdrant cosine similarity already returns a score
-                # where higher = more similar.
                 "relevanceScore": result.score,
             }
         )
 
     return out
-
 
 def delete_document(
     *,
