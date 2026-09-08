@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     huggingface_provider: str = ""
     huggingface_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
-    chroma_persist_directory: str = "./chroma_data"
+    qdrant_url: str = ""
+    qdrant_api_key: str = ""
+    qdrant_collection_name: str = "document_chunks"
 
     chunk_size: int = 1000
     chunk_overlap: int = 150

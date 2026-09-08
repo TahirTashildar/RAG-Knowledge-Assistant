@@ -12,7 +12,7 @@ langchain-huggingface==1.2.2
 langchain-text-splitters==1.1.2
 huggingface-hub==1.30.0
 
-chromadb==1.5.9
+qdrant-client
 
 pypdf==6.17.0
 python-docx==1.2.0

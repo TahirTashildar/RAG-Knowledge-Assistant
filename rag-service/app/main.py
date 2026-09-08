@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from app.api import ingest, query
 
@@ -10,10 +11,12 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 
-app = FastAPI(title="RAG Knowledge Assistant - RAG Service", version="0.1.0")
+app = FastAPI(
+    title="RAG Knowledge Assistant - RAG Service",
+    version="0.1.0",
+)
 
-# Only Express calls this service — CORS is locked down to that origin in production.
-# For local dev we keep it permissive but this is not internet-facing.
+# Only Express calls this service in production.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5000"],
@@ -22,9 +25,28 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root():
+    return {
+        "success": True,
+        "message": "RAG Knowledge Assistant service is running",
+        "data": {},
+    }
+
+
 @app.get("/health")
 def health():
-    return {"success": True, "message": "RAG service is running", "data": {}}
+    return {
+        "success": True,
+        "message": "RAG service is running",
+        "data": {},
+    }
+
+
+# Prevent browser favicon request from showing a 404 error.
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
 
 
 app.include_router(ingest.router, prefix="/rag", tags=["ingest"])
