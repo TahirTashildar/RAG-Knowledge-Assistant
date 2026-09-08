@@ -12,6 +12,14 @@ app.use(express.json());
 if (nodeEnv !== 'test') app.use(morgan('dev'));
 
 // Health check — useful for confirming Phase 1 wiring before any real routes exist.
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'RAG Assistant Backend API is running'
+  });
+});
+
+
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Backend is running', data: { uptime: process.uptime() } });
 });
